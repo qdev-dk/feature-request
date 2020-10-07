@@ -42,8 +42,102 @@ This is the file we will use to keep track of feature requests.
 ### "Broadbean" GUI Features
 * Make the "broadbean" GUI support different AWGs
 
-### Alazar requests
 
+### Alazar requests
+* Clean the raw driver (perhaps best to replace it with the vendor provided one?)
+  Or perhaps make a new wrapper using cython, but likely it's not that much faster considering it's only streams.  
+* Add a single QCOdes get-parameter (.trace) to acquire data in a blocking way
+* Add a single method (.acquire) to aquire data in a non-blocking way (using a thread)
+  ```` python
+  def acquire(self, buffer_ready=None, acquisition_ready=None):
+    """ Organize buffer, start thread that acquires data
+    Argument:
+    -  buffer_ready: function((buffer_numpy_handles)) to be called when a buffer is complete. This function should return before the buffers are again required by the alazar.
+    -  acquisition_ready: function to be called when acquisition is complete
+    """
+* Add a QCodes get-parameter (.trace_async) wrapping .acquire. Its .get() method should return a concurrent.Future 
+  which returns the data.
+* Add raw methods to control alazar acquisition
+
+### DSP virtual instrument
+A new virtual instrument handling the processing of numpy arrays in flexible and programmable way and facilitates multiple data outputs (channels) via QCodes parameters. The actual execution of the chain happens in a continuous active background thread which waits for input on an internal 'input' queue.
+  - It exposes a .add_node(fnc, bind=None) method that adds an execution node 
+    * fnc should be a function accepting the right number of positional arguments and the keyword arguments 'local' and 'output' and returning the data to be handled by the next node in the chain. 
+        The argument 'local' will be given a dictionary with registered data (see .register() method and the example). 
+        The argument 'output' will be given a dictionary with output buffers (perhaps this should be \*\*kwargs instead?). Output will only contains those keys declared by a 'binding'.
+    * When bind is given it should be a dictionary containing keys corresponding to the output dictionary elements. Each dict-value should either be a dictionary containing qcodes parameter initialization arguments (in which case qc-parameters will be created) or a reference to an existing qc-parameter.
+  - Need to figure out what would be the best way to enforce a proper snapshot of the function (serialize or enforce git-tracked module? Or either?).
+  - It exposes a .register(name, data, snapshot=None) method to store data which is persistent between dsp executions such as reference traces (subtract background, demodulation references, etc). 
+    * The value of 'data' will be added the DSP snapshot under 'register.name' unless keyword argument 'snapshot' is provided in which case the snapshot value will be used. This is especially useful when registering data which can be parameterized easily like demodulation references (A*cos(2*pi*f0*t)). In these cases it may be more useful to store the parameters (e.g. A, f0) instead of the data. This is a little dangerous as the user may provide insufficient snapshot data to parametrize the function, but the alternative are worse.
+    * When data is a string it is assumed to be a numexpr which will be evaluated as numepxr.evaluate(data, local_dict = snapshot, global_dict = registered_data, out=output), registered_data is the dict of registered values with the DSP and output is the value stored in the DSP register. After evaluation, the numexpr expressing ('data') will be added to the snapshot.
+    * Calling this function with an existing name, will just overwrite the data. 
+- It exposes a .push(buffer_numpy_handle) methods that queues/triggers an execution of the DSP chain (adds an item the the internal input queue). This function should be a little smart about either adding the buffer handle directly (when the DSP is able to process faster than the buffer is required again) or adding a copy of the data. When auto-detection of overflow is hard, we can add an instance attribute (.copy_on_input) to indicate what to do with incoming data. 
+- It (the background thread) adds execution results to internal queues (one per output channel)
+- It exposes a .pull(timeout=None) method which pulls from the queues (blocking ) add 'populates' the QCodes parameters.
+- Data is pulled via the QCodes parameters.
+
+Example using the gpu as computational back-end
+```` python 
+import cupy as cp
+import cusignal
+from cusignal.filter_design.fir_filter_design import firwin
+
+# This implements demodulation for a single frequency. Scaling up to many is straight-forward. 
+def gpu_filter(buffer, local, output):
+    # Example of a function implementing a single output stream
+    gpud = cusignal.get_shared_mem(len(buffer), dtype=type(input))
+    gpud[:] = input # Transfer the data to the gpu
+    gpud = cp.reshape(gpud, local['pnts'], local['N'])
+     
+    # Multiply the gpu data with the gpu_data register in the DSPmachine
+    gI = local['sin'] * gpud
+    gQ = local['cos'] * gpud
+    
+    filter = cp.asarray(filter, dtype=cupy.float32)
+    fI = cusignal.resample_poly(gI, 16, 25, window=local['filter'], axes=0)
+    fQ = cusignal.resample_poly(gQ, 16, 25, window=local['filter'], axis=0)
+   
+    # If 'traces' is bound, store the result in the output stream 
+    if 'traces' in output:
+      output['traces'].append((cp.asnumpy(fI), cp.asnumpy(fQ)))
+    
+    return (fI, fQ)
+    
+def gpu_integrate(fI, fQ, local, output):
+  # Example of a function implementing a two output streams
+    iI = cp.mean(fI, axis=0)
+    iQ = cp.mean(fQ, axis=0)
+    
+    mI = cp.mean(fI)
+    mQ = cp.mean(fQ)
+   
+    # If 'values' is bound, store the result in the output stream 
+    if 'values' in output:
+      output['values'].append( cp.asnumpy(iI) + 1j * cp.asnumpy(iQ))
+    
+    # If 'average' is bound, store the result in the output stream 
+    if 'average' in output:
+      output['average'].append( cp.asnumpy(mI) + 1j * cp.asnumpy(mQ) )
+    
+# Example of API use
+dsp = DSPmachine('BareIQ')
+dsp.add(gpu_filter, bind={'traces': {...}) # This node binds the 'traces' output stream to a qc-parameter
+dsp.add(gpu_integrate, bind={'values', {...}, 'average':{...}} ) # This node binds the 'values' and 'average' output streams to qc-parameters. 
+
+time = cp.linspace(start, stop, num_samps, endpoint=False) 
+f0 = 10E6 # Demodulation frequency
+fc = 10   # Lowpass filter cutoff frequency
+dsp.register('cos', cp.cos(2*np.pi*f0*time), snapshot = dict(ch=1, q='I', ampl=1, f0=f0))
+dsp.register('sin', cp.sin(2*np.pi*f0*time), snapshot = dict(ch=1, q='Q', ampl=1, f0=f0))
+dsp.register('filter', firwin(251, fc), snapshot = dict(func='cusignal.filter_design.fir_filter_design.firwin', taps=251, fc=fc)
+
+azalar.acquire(buffer_ready = dsp.push)
+for i in range(num_buffers):
+    dsp.pull(timeout=500) # Wait. When it returns new data has been pushed to the qc-parameters bound.
+    meas.add_result(dsp.traces, (time, repetitions, dsp.traces()))
+    meas.add_result(dsp.values, (repetitions, dsp.values()))
+    meas.add_result(dsp.average, (dsp.average()))
+````
 
 ### Other
 * Something   
