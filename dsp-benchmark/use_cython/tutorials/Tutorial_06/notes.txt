@@ -1,0 +1,29 @@
+Tutorial_04 - attempt to use IPP
+
+In this attempt we will implement a demodulation track using IPP which 
+
+takes:
+- a 2D numpy array (N,M) with input data
+- a 1D numpy array with the demodulation kernel
+
+processes:
+- create I and Q channels by multipling input with quadratures
+- runs a convolutions with the demodulation kernel
+- calculates the average of the traces
+
+return:
+- two 1D numpy arrays (N) containing I and Q data
+
+To implement this we need to understand
+- use cython pyd files
+    - https://cython.readthedocs.io/en/latest/src/userguide/sharing_declarations.html
+    - https://cython.readthedocs.io/en/latest/src/tutorial/pxd_files.html
+        "When accompanying an equally named pyx file, they provide a Cython interface to the Cython module so that other Cython modules can communicate with it using a more efficient protocol than the Python one."
+- use access to numpy array from c without copying (memory maps or PyArray_DATA)
+    - https://github.com/cython/cython/wiki/tutorials-NumpyPointerToC
+    - https://acsgsoc15.wordpress.com/2015/04/09/optimizing-array-in-cython/ -> Claims PyArray_DATA is fastest
+    - https://cython.readthedocs.io/en/latest/src/userguide/numpy_tutorial.html#numpy-tutorial
+    http://docs.cython.org/en/latest/src/userguide/memoryviews.html#pass-data-from-a-c-function-via-pointer
+- how to call IPP functions from cython
+    - https://cython.readthedocs.io/en/latest/src/tutorial/clibraries.html#
+- setup parallelization from cython
