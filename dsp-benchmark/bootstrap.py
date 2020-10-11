@@ -12,7 +12,7 @@ from scipy.signal import firwin, fftconvolve, lfilter, kaiserord
 pi = np.pi 
 Harmonic = namedtuple('Harmonic', ['frequency', 'amplitude', 'phase'])
 
-def default(N=500, p=5001, f0=(2.5)):
+def default(N=500, p=5001, f0=(2.5,)):
     """ Generate standard data for benchmarking 
     Return:
     - signal: data to demodulate
