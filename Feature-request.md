@@ -10,7 +10,9 @@ This is the file we will use to keep track of feature requests.
 
 
 ### Broadbean Features
-* Nice way of saving and loading waveforms. This could be used both as documentation/repeatability and to build a library of commonly used waveforms
+* Nice way of saving and loading waveforms. This could be used both as documentation/repeatability and to build a library of commonly used waveforms (done)
+* Add meta data to triggeres in broadbean. Example trigger-one fires 3 times during one segment, we now want to add metata data to each instant of the trigger. measure1, measure2 and measure3 and pass this information to the measurement instrument. This would make it easy to returnd measure1-measure2
+* Element generation based on vector in gate space. Ultimately, point and clik on 2d gate map to define the vector. 
 * Broadbean support for more than 2 triggers 
 * For broadbean to create parameters e.g a setpoint array based on the sequence that is created. Suppose I create a sequence that changes the duration of something in each element. Then it's likely that I want that to be a parameter for some measurement. Broadbean should create sensible parameters with the pulse sequence without having to manually create them later.
 + Integration with qcodes parameters and metadata system. Perhaps a sequence can be exposed as some (temporary) vitual instrument (using a name given as required argument of Sequence.__init__). The snapshot of the sequence 'instrument' returns a complete serialization of all required information to recreate the sequence from scratch. Parameters of named segments (used in the sequence) become exposed as qcodes parameters ordered in a channel per **named** sequence such that sequence parameter can be used as independent measurement parameters. A possible challenge could be that, depending on the setup (i.e. user wishes) the qcodes parameter should be either ArrayParameters (buffered senario) or Parameters (triggered scenario), but quite likely an easy solution exists. There are perhaps other challenges, but lets think together how to tackle these as probably non of these will be hard to solve.
